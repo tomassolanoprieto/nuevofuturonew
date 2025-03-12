@@ -29,27 +29,25 @@ interface Report {
   daily_reports?: DailyReport[];
 }
 
-export default function SupervisorDelegationReports() {
+export default function CompanyReports() {
   const [reports, setReports] = useState<Report[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [reportType, setReportType] = useState<'general' | 'official' | 'alarms'>('general');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWorkCenter, setSelectedWorkCenter] = useState('');
+  const [selectedDelegation, setSelectedDelegation] = useState('MADRID'); // Solo MADRID
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedEmployee, setSelectedEmployee] = useState('');
   const [employees, setEmployees] = useState<any[]>([]);
   const [workCenters, setWorkCenters] = useState<string[]>([]);
+  const [delegations, setDelegations] = useState<string[]>(['MADRID']); // Solo MADRID
   const [hoursLimit, setHoursLimit] = useState<number>(40);
 
-  const supervisorEmail = localStorage.getItem('supervisorEmail');
-
   useEffect(() => {
-    if (supervisorEmail) {
-      fetchWorkCenters();
-      fetchEmployees();
-    }
-  }, [supervisorEmail]);
+    fetchWorkCenters();
+    fetchEmployees();
+  }, [selectedWorkCenter]);
 
   useEffect(() => {
     if (startDate && endDate) {
@@ -59,30 +57,20 @@ export default function SupervisorDelegationReports() {
 
   const fetchWorkCenters = async () => {
     try {
-      if (!supervisorEmail) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      // Get delegation first
-      const { data: delegationData, error: delegationError } = await supabase
-        .rpc('validate_delegation_access', {
-          p_email: supervisorEmail,
-          p_pin: localStorage.getItem('supervisorPin') || ''
-        });
+      const { data } = await supabase
+        .from('employee_profiles')
+        .select('work_centers')
+        .eq('company_id', user.id)
+        .eq('delegation', 'MADRID'); // Solo MADRID
 
-      if (delegationError) throw delegationError;
-
-      if (!delegationData) {
-        throw new Error('No se pudo obtener la delegación');
+      if (data) {
+        const uniqueWorkCenters = [...new Set(data.flatMap(emp => emp.work_centers))]
+          .filter(center => center.startsWith('MADRID')); // Solo centros que comienzan con MADRID
+        setWorkCenters(uniqueWorkCenters);
       }
-
-      // Get work centers for delegation
-      const { data: workCentersData, error: workCentersError } = await supabase
-        .rpc('get_delegation_work_centers', {
-          p_delegation: delegationData
-        });
-
-      if (workCentersError) throw workCentersError;
-
-      setWorkCenters(workCentersData || []);
     } catch (error) {
       console.error('Error fetching work centers:', error);
     }
@@ -90,52 +78,54 @@ export default function SupervisorDelegationReports() {
 
   const fetchEmployees = async () => {
     try {
-      if (!supervisorEmail) return;
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      // Get delegation first
-      const { data: delegationData, error: delegationError } = await supabase
-        .rpc('validate_delegation_access', {
-          p_email: supervisorEmail,
-          p_pin: localStorage.getItem('supervisorPin') || ''
-        });
+      let query = supabase
+        .from('employee_profiles')
+        .select('*')
+        .eq('company_id', user.id)
+        .eq('is_active', true)
+        .eq('delegation', 'MADRID'); // Solo MADRID
 
-      if (delegationError) throw delegationError;
-
-      if (!delegationData) {
-        throw new Error('No se pudo obtener la delegación');
+      if (selectedWorkCenter) {
+        query = query.contains('work_centers', [selectedWorkCenter]);
       }
 
-      // Get employees for delegation
-      const { data: employeesData, error: employeesError } = await supabase
-        .rpc('get_employees_by_delegation', {
-          p_delegation: delegationData
-        });
-
-      if (employeesError) throw employeesError;
-
-      setEmployees(employeesData || []);
+      const { data } = await query;
+      if (data) {
+        setEmployees(data);
+      }
     } catch (error) {
       console.error('Error fetching employees:', error);
     }
   };
 
   const generateReport = async () => {
-    if (!startDate || !endDate || !supervisorEmail) return;
+    if (!startDate || !endDate) return;
     setIsLoading(true);
 
     try {
-      // Get delegation first
-      const { data: delegationData, error: delegationError } = await supabase
-        .rpc('validate_delegation_access', {
-          p_email: supervisorEmail,
-          p_pin: localStorage.getItem('supervisorPin') || ''
-        });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      if (delegationError) throw delegationError;
+      let employeeQuery = supabase
+        .from('employee_profiles')
+        .select('*')
+        .eq('company_id', user.id)
+        .eq('is_active', true)
+        .eq('delegation', 'MADRID'); // Solo MADRID
 
-      if (!delegationData) {
-        throw new Error('No se pudo obtener la delegación');
+      if (selectedWorkCenter) {
+        employeeQuery = employeeQuery.contains('work_centers', [selectedWorkCenter]);
       }
+
+      if (searchTerm) {
+        employeeQuery = employeeQuery.ilike('fiscal_name', `%${searchTerm}%`);
+      }
+
+      const { data: employees } = await employeeQuery;
+      if (!employees) return;
 
       let reportData: Report[] = [];
 
@@ -212,18 +202,36 @@ export default function SupervisorDelegationReports() {
         }
 
         case 'general': {
-          // Get filtered requests for delegation
-          const { data: requests, error: requestsError } = await supabase
-            .rpc('get_filtered_requests_by_delegation', {
-              p_delegation: delegationData,
-              p_work_center: selectedWorkCenter || null,
-              p_start_date: startDate,
-              p_end_date: endDate
-            });
+          // Get daily work hours for all matching employees
+          const { data: dailyHours } = await supabase
+            .from('daily_work_hours')
+            .select('*')
+            .in('employee_id', employees.map(emp => emp.id))
+            .gte('work_date', startDate)
+            .lte('work_date', endDate)
+            .order('work_date', { ascending: true });
 
-          if (requestsError) throw requestsError;
+          if (!dailyHours) break;
 
-          reportData = requests || [];
+          reportData = dailyHours.flatMap(day => {
+            const employee = employees.find(emp => emp.id === day.employee_id);
+            if (!employee) return [];
+
+            return day.timestamps.map((ts: string, i: number) => ({
+              employee: {
+                fiscal_name: employee.fiscal_name,
+                email: employee.email,
+                work_centers: employee.work_centers,
+                delegation: employee.delegation,
+                document_number: employee.document_number
+              },
+              date: new Date(day.work_date).toLocaleDateString(),
+              entry_type: day.entry_types[i],
+              timestamp: new Date(ts).toLocaleTimeString(),
+              work_center: day.work_centers[i],
+              total_hours: day.total_hours
+            }));
+          });
           break;
         }
 
@@ -475,9 +483,7 @@ export default function SupervisorDelegationReports() {
                   Empleado
                 </label>
                 <select
-                  value={selecte
-
-dEmployee}
+                  value={selectedEmployee}
                   onChange={(e) => setSelectedEmployee(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
@@ -504,6 +510,24 @@ dEmployee}
                     {workCenters.map((center) => (
                       <option key={center} value={center}>
                         {center}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Delegación
+                  </label>
+                  <select
+                    value={selectedDelegation}
+                    onChange={(e) => setSelectedDelegation(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Todas las delegaciones</option>
+                    {delegations.map((delegation) => (
+                      <option key={delegation} value={delegation}>
+                        {delegation}
                       </option>
                     ))}
                   </select>
