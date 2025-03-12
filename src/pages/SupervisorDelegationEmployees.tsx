@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { UserPlus, UserX, Download, Upload, Search, Check, X, Edit, Save, Trash } from 'lucide-react';
+import { UserPlus, Search, Download, Upload, Check, X } from 'lucide-react';
 
 interface Employee {
   id: string;
@@ -16,9 +16,6 @@ interface Employee {
   employee_id: string;
   seniority_date: string;
   job_positions: string[];
-  country: string;
-  timezone: string;
-  phone: string;
 }
 
 interface NewEmployee {
@@ -28,76 +25,61 @@ interface NewEmployee {
   document_number: string;
   work_centers: string[];
   delegation: string;
-  country: string;
-  timezone: string;
-  phone: string;
   employee_id: string;
   seniority_date: string;
   job_positions: string[];
 }
 
+// Madrid work centers only
 const workCenterOptions = [
-  "MADRID HOGARES DE EMANCIPACION V. DEL PARDILLO",
-  "MADRID CUEVAS DE ALMANZORA",
-  "MADRID OFICINA",
-  "MADRID ALCOBENDAS",
-  "MADRID MIGUEL HERNANDEZ",
-  "MADRID HUMANITARIAS",
-  "MADRID VALDEBERNARDO",
-  "MADRID JOSE DE PASAMONTE",
-  "MADRID IBIZA",
-  "MADRID PASEO EXTREMADURA",
-  "MADRID DIRECTORES DE CENTRO",
-  "MADRID GABRIEL USERA",
-  "MADRID ARROYO DE LAS PILILLAS",
-  "MADRID CENTRO DE DIA CARMEN HERRERO",
-  "MADRID HOGARES DE EMANCIPACION SANTA CLARA",
-  "MADRID HOGARES DE EMANCIPACION BOCANGEL",
-  "MADRID AVDA DE AMERICA",
-  "MADRID VIRGEN DEL PUIG",
-  "MADRID ALMACEN",
-  "MADRID HOGARES DE EMANCIPACION ROQUETAS",
-];
-
-const delegationOptions = [
-  "MADRID"
+  'MADRID HOGARES DE EMANCIPACION V. DEL PARDILLO',
+  'MADRID CUEVAS DE ALMANZORA',
+  'MADRID OFICINA',
+  'MADRID ALCOBENDAS',
+  'MADRID JOSE DE PASAMONTE',
+  'MADRID VALDEBERNARDO',
+  'MADRID MIGUEL HERNANDEZ',
+  'MADRID GABRIEL USERA',
+  'MADRID IBIZA',
+  'MADRID PASEO EXTREMADURA',
+  'MADRID DIRECTORES DE CENTRO',
+  'MADRID ARROYO DE LAS PILILLAS',
+  'MADRID CENTRO DE DIA CARMEN HERRERO',
+  'MADRID HOGARES DE EMANCIPACION SANTA CLARA',
+  'MADRID HOGARES DE EMANCIPACION BOCANGEL',
+  'MADRID AVDA DE AMERICA',
+  'MADRID VIRGEN DEL PUIG',
+  'MADRID ALMACEN',
+  'MADRID HOGARES DE EMANCIPACION ROQUETAS'
 ];
 
 const jobPositions = [
-  "EDUCADOR/A SOCIAL",
-  "AUX. TÉCNICO/A EDUCATIVO/A",
-  "GERENTE",
-  "DIRECTOR EMANCIPACION",
-  "PSICOLOGO/A",
-  "ADMINISTRATIVO/A",
-  "EDUCADOR/A RESPONSABLE",
-  "TEC. INT. SOCIAL",
-  "APOYO DOMESTICO",
-  "OFICIAL/A DE MANTENIMIENTO",
-  "PEDAGOGO/A",
-  "CONTABLE",
-  "TRABAJADOR/A SOCIAL",
-  "COCINERO/A",
-  "COORDINADOR/A",
-  "DIRECTOR/A HOGAR",
-  "RESPONSABLE HOGAR",
-  "AUX. SERV. GRALES",
-  "ADVO/A. CONTABLE",
-  "LIMPIADOR/A",
-  "AUX. ADMVO/A",
-  "DIRECTOR/A",
-  "JEFE/A ADMINISTRACIÓN",
-  "DIRECTORA POSTACOGIMIENTO",
-  "COORD. TERRITORIAL CASTILLA Y LEON",
-  "DIRECTOR COMUNICACION",
-  "AUX. GEST. ADVA",
-  "RESPONSABLE RRHH",
-  "COORD. TERRITORIAL ANDALUCIA"
+  'EDUCADOR/A SOCIAL',
+  'AUX. TÉCNICO/A EDUCATIVO/A',
+  'GERENTE',
+  'DIRECTOR EMANCIPACION',
+  'PSICOLOGO/A',
+  'ADMINISTRATIVO/A',
+  'EDUCADOR/A RESPONSABLE',
+  'TEC. INT. SOCIAL',
+  'APOYO DOMESTICO',
+  'OFICIAL/A DE MANTENIMIENTO',
+  'PEDAGOGO/A',
+  'CONTABLE',
+  'TRABAJADOR/A SOCIAL',
+  'COCINERO/A',
+  'COORDINADOR/A',
+  'DIRECTOR/A HOGAR',
+  'RESPONSABLE HOGAR',
+  'AUX. SERV. GRALES',
+  'ADVO/A. CONTABLE',
+  'LIMPIEZA',
+  'AUX. ADMVO/A',
+  'DIRECTOR/A',
+  'JEFE/A ADMINISTRACIÓN'
 ];
 
-export default function CompanyEmployees() {
-  const modalRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+export default function SupervisorDelegationEmployees() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [showActive, setShowActive] = useState(true);
@@ -112,16 +94,11 @@ export default function CompanyEmployees() {
     document_type: 'DNI',
     document_number: '',
     work_centers: [],
-    delegation: '',
-    country: 'España',
-    timezone: 'Europe/Madrid',
-    phone: '',
+    delegation: 'MADRID',
     employee_id: '',
     seniority_date: '',
     job_positions: []
   });
-  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
-  const [editingEmployeeData, setEditingEmployeeData] = useState<Employee | null>(null);
 
   const employeesPerPage = 25;
 
@@ -131,62 +108,24 @@ export default function CompanyEmployees() {
 
   const fetchEmployees = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      setLoading(true);
+      const { data, error } = await supabase.rpc(
+        'get_employees_by_delegation',
+        { p_delegation: 'MADRID' }
+      );
 
-      const { data } = await supabase
-        .from('employee_profiles')
-        .select('*')
-        .eq('company_id', user.id)
-        .eq('is_active', showActive)
-        .order('fiscal_name', { ascending: true });
+      if (error) {
+        console.error('Error fetching employees:', error);
+        return;
+      }
 
       if (data) {
         setEmployees(data);
       }
     } catch (err) {
       console.error('Error fetching employees:', err);
-    }
-  };
-
-  const handleEditClick = (employee: Employee) => {
-    setEditingEmployeeId(employee.id);
-    setEditingEmployeeData(employee);
-  };
-
-  const handleSaveClick = async () => {
-    if (!editingEmployeeData) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-
-      const { error } = await supabase
-        .from('employee_profiles')
-        .update(editingEmployeeData)
-        .eq('id', editingEmployeeData.id);
-
-      if (error) throw error;
-
-      await fetchEmployees();
-      setEditingEmployeeId(null);
-      setEditingEmployeeData(null);
-    } catch (err) {
-      console.error('Error updating employee:', err);
-      setError(err instanceof Error ? err.message : 'Error al actualizar empleado');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleCancelClick = () => {
-    setEditingEmployeeId(null);
-    setEditingEmployeeData(null);
-  };
-
-  const handleInputChange = (field: keyof Employee, value: string | string[]) => {
-    if (editingEmployeeData) {
-      setEditingEmployeeData({ ...editingEmployeeData, [field]: value });
     }
   };
 
@@ -195,16 +134,15 @@ export default function CompanyEmployees() {
       setLoading(true);
       setError(null);
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No se encontró el usuario autenticado');
+      // Always set delegation to MADRID
+      const employeeData = {
+        ...newEmployee,
+        delegation: 'MADRID'
+      };
 
       const { error } = await supabase
         .from('employee_profiles')
-        .insert([{
-          ...newEmployee,
-          company_id: user.id,
-          is_active: true
-        }]);
+        .insert([employeeData]);
 
       if (error) throw error;
 
@@ -216,10 +154,7 @@ export default function CompanyEmployees() {
         document_type: 'DNI',
         document_number: '',
         work_centers: [],
-        delegation: '',
-        country: 'España',
-        timezone: 'Europe/Madrid',
-        phone: '',
+        delegation: 'MADRID',
         employee_id: '',
         seniority_date: '',
         job_positions: []
@@ -280,7 +215,7 @@ export default function CompanyEmployees() {
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'empleados.csv';
+    link.download = 'empleados_madrid.csv';
     link.click();
   };
 
@@ -289,9 +224,6 @@ export default function CompanyEmployees() {
     if (!file) return;
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       const reader = new FileReader();
       reader.onload = async (e) => {
         const text = e.target?.result as string;
@@ -305,20 +237,30 @@ export default function CompanyEmployees() {
               document_type,
               document_number,
               email,
-              work_center,
-              delegation,
+              work_centers_str,
+              _delegation,
+              _created_at,
               seniority_date,
-              job_position
+              _is_active,
+              job_positions_str
             ] = row.split(',').map(field => field.trim().replace(/^"|"$/g, ''));
 
             // Skip empty rows
             if (!fiscal_name || !email) continue;
 
-            // Parse work centers
-            const work_centers = work_center ? [work_center] : [];
+            // Parse work centers (only allow Madrid centers)
+            const work_centers = work_centers_str
+              ? work_centers_str.split(';')
+                .map(wc => wc.trim())
+                .filter(wc => workCenterOptions.includes(wc))
+              : [];
 
             // Parse job positions
-            const job_positions = job_position ? [job_position] : [];
+            const job_positions = job_positions_str
+              ? job_positions_str.split(';')
+                .map(jp => jp.trim())
+                .filter(jp => jobPositions.includes(jp))
+              : [];
 
             // Parse and validate seniority date
             let formattedSeniorityDate = null;
@@ -339,7 +281,7 @@ export default function CompanyEmployees() {
               }
             }
 
-            // Create employee profile
+            // Create employee profile (always set delegation to MADRID)
             const { error: profileError } = await supabase
               .from('employee_profiles')
               .insert([{
@@ -349,12 +291,9 @@ export default function CompanyEmployees() {
                 document_type: document_type || 'DNI',
                 document_number: document_number || '',
                 work_centers,
-                delegation: delegation || 'Madrid',
-                country: 'España',
-                timezone: 'Europe/Madrid',
+                delegation: 'MADRID',
                 seniority_date: formattedSeniorityDate,
                 job_positions,
-                company_id: user.id,
                 is_active: true
               }]);
 
@@ -370,41 +309,11 @@ export default function CompanyEmployees() {
         }
 
         await fetchEmployees();
-        
-        // Reset file input
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
       };
       reader.readAsText(file);
     } catch (err) {
       console.error('Error in handleImportEmployees:', err);
     }
-  };
-
-  const handleAddClick = () => {
-    setIsAdding(true);
-    document.body.style.overflow = 'hidden';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const handleCloseModal = () => {
-    setIsAdding(false);
-    document.body.style.overflow = 'unset';
-    setNewEmployee({
-      fiscal_name: '',
-      email: '',
-      document_type: 'DNI',
-      document_number: '',
-      work_centers: [],
-      delegation: '',
-      country: 'España',
-      timezone: 'Europe/Madrid',
-      phone: '',
-      employee_id: '',
-      seniority_date: '',
-      job_positions: []
-    });
   };
 
   const filteredEmployees = employees.filter(emp => 
@@ -423,7 +332,7 @@ export default function CompanyEmployees() {
       <div className="mb-6 flex flex-wrap gap-4 items-center justify-between">
         <div className="flex gap-4">
           <button
-            onClick={handleAddClick}
+            onClick={() => setIsAdding(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <UserPlus className="w-5 h-5" />
@@ -434,7 +343,7 @@ export default function CompanyEmployees() {
             disabled={selectedEmployees.length === 0 || loading}
             className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <UserX className="w-5 h-5" />
+            <X className="w-5 h-5" />
             Desactivar Seleccionados
           </button>
           <button
@@ -451,7 +360,6 @@ export default function CompanyEmployees() {
               onChange={handleImportEmployees}
               className="hidden"
               id="import-file"
-              ref={fileInputRef}
             />
             <label
               htmlFor="import-file"
@@ -501,214 +409,175 @@ export default function CompanyEmployees() {
       </div>
 
       {isAdding && (
-        <div 
-          className="fixed inset-0 overflow-y-auto bg-black bg-opacity-50 z-50"
-          style={{ paddingTop: '2vh', paddingBottom: '2vh' }}
-        >
-          <div className="flex items-center justify-center min-h-full p-4">
-            <div 
-              ref={modalRef}
-              className="bg-white rounded-lg p-6 max-w-md w-full my-8"
-            >
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Añadir Nuevo Empleado</h2>
-                <button
-                  onClick={handleCloseModal}
-                  className="text-gray-400 hover:text-gray-600"
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Añadir Nuevo Empleado</h2>
+              <button
+                onClick={() => setIsAdding(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={(e) => { e.preventDefault(); handleAddEmployee(); }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ID Empleado
+                </label>
+                <input
+                  type="text"
+                  value={newEmployee.employee_id}
+                  onChange={(e) => setNewEmployee({...newEmployee, employee_id: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Fecha de Antigüedad
+                </label>
+                <input
+                  type="date"
+                  value={newEmployee.seniority_date}
+                  onChange={(e) => setNewEmployee({...newEmployee, seniority_date: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Nombre
+                </label>
+                <input
+                  type="text"
+                  value={newEmployee.fiscal_name}
+                  onChange={(e) => setNewEmployee({...newEmployee, fiscal_name: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={newEmployee.email}
+                  onChange={(e) => setNewEmployee({...newEmployee, email: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Tipo de Documento
+                </label>
+                <select
+                  value={newEmployee.document_type}
+                  onChange={(e) => setNewEmployee({...newEmployee, document_type: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
                 >
-                  <X className="w-6 h-6" />
+                  <option value="DNI">DNI</option>
+                  <option value="NIE">NIE</option>
+                  <option value="Pasaporte">Pasaporte</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Número de Documento
+                </label>
+                <input
+                  type="text"
+                  value={newEmployee.document_number}
+                  onChange={(e) => setNewEmployee({...newEmployee, document_number: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Centros de Trabajo
+                </label>
+                <select
+                  multiple
+                  value={newEmployee.work_centers}
+                  onChange={(e) => {
+                    const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                    setNewEmployee({...newEmployee, work_centers: selectedOptions});
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  size={5}
+                >
+                  {workCenterOptions.map(center => (
+                    <option key={center} value={center}>
+                      {center}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-sm text-gray-500">
+                  Mantén presionado Ctrl (Cmd en Mac) para seleccionar múltiples centros
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Puesto de Trabajo
+                </label>
+                <select
+                  multiple
+                  value={newEmployee.job_positions}
+                  onChange={(e) => {
+                    const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+                    setNewEmployee({...newEmployee, job_positions: selectedOptions});
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  required
+                  size={5}
+                >
+                  {jobPositions.map(position => (
+                    <option key={position} value={position}>
+                      {position}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-sm text-gray-500">
+                  Mantén presionado Ctrl (Cmd en Mac) para seleccionar múltiples puestos
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-4 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setIsAdding(false)}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Añadiendo...' : 'Añadir Empleado'}
                 </button>
               </div>
-              
-              {error && (
-                <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700">
-                  {error}
-                </div>
-              )}
-
-              <form onSubmit={(e) => { e.preventDefault(); handleAddEmployee(); }} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    ID Empleado
-                  </label>
-                  <input
-                    type="text"
-                    value={newEmployee.employee_id}
-                    onChange={(e) => setNewEmployee({...newEmployee, employee_id: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Fecha de Antigüedad
-                  </label>
-                  <input
-                    type="date"
-                    value={newEmployee.seniority_date}
-                    onChange={(e) => setNewEmployee({...newEmployee, seniority_date: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nombre
-                  </label>
-                  <input
-                    type="text"
-                    value={newEmployee.fiscal_name}
-                    onChange={(e) => setNewEmployee({...newEmployee, fiscal_name: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={newEmployee.email}
-                    onChange={(e) => setNewEmployee({...newEmployee, email: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Teléfono
-                  </label>
-                  <input
-                    type="tel"
-                    value={newEmployee.phone}
-                    onChange={(e) => setNewEmployee({...newEmployee, phone: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tipo de Documento
-                  </label>
-                  <select
-                    value={newEmployee.document_type}
-                    onChange={(e) => setNewEmployee({...newEmployee, document_type: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  >
-                    <option value="DNI">DNI</option>
-                    <option value="NIE">NIE</option>
-                    <option value="Pasaporte">Pasaporte</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Número de Documento
-                  </label>
-                  <input
-                    type="text"
-                    value={newEmployee.document_number}
-                    onChange={(e) => setNewEmployee({...newEmployee, document_number: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Centros de Trabajo
-                  </label>
-                  <select
-                    multiple
-                    value={newEmployee.work_centers}
-                    onChange={(e) => {
-                      const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                      setNewEmployee({...newEmployee, work_centers: selectedOptions});
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                    size={5}
-                  >
-                    {workCenterOptions.map(center => (
-                      <option key={center} value={center}>
-                        {center}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Mantén presionado Ctrl (Cmd en Mac) para seleccionar múltiples centros
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Puesto de Trabajo
-                  </label>
-                  <select
-                    multiple
-                    value={newEmployee.job_positions}
-                    onChange={(e) => {
-                      const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                      setNewEmployee({...newEmployee, job_positions: selectedOptions});
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                    size={5}
-                  >
-                    {jobPositions.map(position => (
-                      <option key={position} value={position}>
-                        {position}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Mantén presionado Ctrl (Cmd en Mac) para seleccionar múltiples puestos
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Delegación
-                  </label>
-                  <select
-                    value={newEmployee.delegation}
-                    onChange={(e) => setNewEmployee({...newEmployee, delegation: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    required
-                  >
-                    <option value="">Selecciona una delegación</option>
-                    {delegationOptions.map(delegation => (
-                      <option key={delegation} value={delegation}>
-                        {delegation}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex justify-end gap-4 mt-6">
-                  <button
-                    type="button"
-                    onClick={handleCloseModal}
-                    className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-                  >
-                    {loading ? 'Añadiendo...' : 'Añadir Empleado'}
-                  </button>
-                </div>
-              </form>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -750,12 +619,6 @@ export default function CompanyEmployees() {
                 Centros de Trabajo
               </th>
               <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Delegación
-              </th>
-              <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                PIN
-              </th>
-              <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Fecha Incorporación
               </th>
               <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -766,9 +629,6 @@ export default function CompanyEmployees() {
               </th>
               <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Estado
-              </th>
-              <th className="px-6 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Acciones
               </th>
             </tr>
           </thead>
@@ -790,155 +650,31 @@ export default function CompanyEmployees() {
                   />
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <input
-                      type="text"
-                      value={editingEmployeeData?.employee_id || ''}
-                      onChange={(e) => handleInputChange('employee_id', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    />
-                  ) : (
-                    employee.employee_id
-                  )}
+                  {employee.employee_id}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <input
-                      type="text"
-                      value={editingEmployeeData?.fiscal_name || ''}
-                      onChange={(e) => handleInputChange('fiscal_name', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    />
-                  ) : (
-                    employee.fiscal_name
-                  )}
+                  {employee.fiscal_name}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <select
-                      value={editingEmployeeData?.document_type || ''}
-                      onChange={(e) => handleInputChange('document_type', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    >
-                      <option value="DNI">DNI</option>
-                      <option value="NIE">NIE</option>
-                      <option value="Pasaporte">Pasaporte</option>
-                    </select>
-                  ) : (
-                    employee.document_type
-                  )}
+                  {employee.document_type}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <input
-                      type="text"
-                      value={editingEmployeeData?.document_number || ''}
-                      onChange={(e) => handleInputChange('document_number', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    />
-                  ) : (
-                    employee.document_number
-                  )}
+                  {employee.document_number}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <input
-                      type="email"
-                      value={editingEmployeeData?.email || ''}
-                      onChange={(e) => handleInputChange('email', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    />
-                  ) : (
-                    employee.email
-                  )}
+                  {employee.email}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <select
-                      multiple
-                      value={editingEmployeeData?.work_centers || []}
-                      onChange={(e) => {
-                        const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                        handleInputChange('work_centers', selectedOptions);
-                      }}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                      size={3}
-                    >
-                      {workCenterOptions.map(center => (
-                        <option key={center} value={center}>
-                          {center}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    employee.work_centers.join(', ')
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <select
-                      value={editingEmployeeData?.delegation || ''}
-                      onChange={(e) => handleInputChange('delegation', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    >
-                      {delegationOptions.map(delegation => (
-                        <option key={delegation} value={delegation}>
-                          {delegation}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    employee.delegation
-                  )}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <input
-                      type="text"
-                      value={editingEmployeeData?.pin || ''}
-                      onChange={(e) => handleInputChange('pin', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    />
-                  ) : (
-                    employee.pin
-                  )}
+                  {employee.work_centers.join(', ')}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {new Date(employee.created_at).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <input
-                      type="date"
-                      value={editingEmployeeData?.seniority_date || ''}
-                      onChange={(e) => handleInputChange('seniority_date', e.target.value)}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                    />
-                  ) : (
-                    employee.seniority_date ? new Date(employee.seniority_date).toLocaleDateString() : ''
-                  )}
+                  {employee.seniority_date ? new Date(employee.seniority_date).toLocaleDateString() : ''}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <select
-                      multiple
-                      value={editingEmployeeData?.job_positions || []}
-                      onChange={(e) => {
-                        const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                        handleInputChange('job_positions', selectedOptions);
-                      }}
-                      className="w-full px-2 py-1 border border-gray-300 rounded-lg"
-                      size={3}
-                    >
-                      {jobPositions.map(position => (
-                        <option key={position} value={position}>
-                          {position}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    employee.job_positions ? employee.job_positions.join(', ') : ''
-                  )}
+                  {employee.job_positions ? employee.job_positions.join(', ') : ''}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
@@ -958,31 +694,6 @@ export default function CompanyEmployees() {
                       </>
                     )}
                   </span>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  {editingEmployeeId === employee.id ? (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleSaveClick}
-                        className="p-1 text-green-600 hover:text-green-800"
-                      >
-                        <Save className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={handleCancelClick}
-                        className="p-1 text-red-600 hover:text-red-800"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleEditClick(employee)}
-                      className="p-1 text-blue-600 hover:text-blue-800"
-                    >
-                      <Edit className="w-5 h-5" />
-                    </button>
-                  )}
                 </td>
               </tr>
             ))}
